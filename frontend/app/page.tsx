@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
@@ -30,6 +30,7 @@ export default function Home() {
   const [debugInfo, setDebugInfo] = useState<any>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
+  const [wordsPerCaption, setWordsPerCaption] = useState(3);
 
   useEffect(() => {
     if (file) {
@@ -41,20 +42,79 @@ export default function Home() {
     }
   }, [file]);
 
-  const getCurrentCaption = () => {
-    if (viewMode === 'word') {
-      // Find the word that matches current time
-      // Adding a small buffer or handling gaps might be nice, but strictly:
-      const currentWord = wordLevelSubtitles.find(word => 
-        currentTime >= word.start && currentTime <= word.end
-      );
-      return currentWord ? currentWord.text : '';
-    } else {
-      const currentPhrase = phraseSubtitles.find(phrase => 
-        currentTime >= phrase.start && currentTime <= phrase.end
-      );
-      return currentPhrase ? currentPhrase.text : '';
-    }
+  // Generate phrase segments dynamically based on wordsPerCaption
+  const dynamicPhrases = useMemo(() => {
+    if (!wordLevelSubtitles.length) return [];
+
+    const phrases = [];
+    let currentWords: any[] = [];
+    
+    wordLevelSubtitles.forEach((word, index) => {
+      currentWords.push(word);
+      
+      const isLastWord = index === wordLevelSubtitles.length - 1;
+      const reachedCountLimit = currentWords.length >= wordsPerCaption;
+      
+      // Check for silence/gap (e.g., > 0.5s) to naturally break phrases
+      let hugeGap = false;
+      if (!isLastWord) {
+        const nextWord = wordLevelSubtitles[index + 1];
+        if (nextWord.start - word.end > 0.8) {
+            hugeGap = true;
+        }
+      }
+
+      if (reachedCountLimit || isLastWord || hugeGap) {
+        const startTime = currentWords[0].start;
+        const endTime = currentWords[currentWords.length - 1].end;
+        const text = currentWords.map(w => w.text).join(' ');
+        
+        phrases.push({
+          start: startTime,
+          end: endTime,
+          text: text,
+          words: [...currentWords]
+        });
+        
+        currentWords = [];
+      }
+    });
+    
+    return phrases;
+  }, [wordLevelSubtitles, wordsPerCaption]);
+
+  const renderOverlayContent = () => {
+    if (!dynamicPhrases.length) return null;
+
+    // Find the active phrase based on current time
+    // We iterate to find the phrase that covers the current time
+    const activePhrase = dynamicPhrases.find(p => currentTime >= p.start && currentTime <= p.end);
+
+    if (!activePhrase) return null;
+
+    return (
+        <div className="flex flex-wrap justify-center items-end gap-x-3 gap-y-2 max-w-4xl px-8 mx-auto">
+          {activePhrase.words.map((word: any, idx: number) => {
+            const isActive = currentTime >= word.start && currentTime <= word.end;
+            return (
+               <span 
+                 key={`${word.start}-${idx}`}
+                 className={`font-black uppercase transition-all duration-75 leading-tight
+                   ${isActive 
+                     ? 'text-yellow-400 scale-110 -translate-y-1 z-10 [-webkit-text-stroke:2px_black] opacity-100' 
+                     : 'text-white scale-100 [-webkit-text-stroke:1px_black] opacity-80'
+                   }`}
+                 style={{ 
+                   fontSize: wordsPerCaption === 1 ? '5rem' : '3rem',
+                   textShadow: isActive ? '3px 3px 0 #000' : '2px 2px 0 #000',
+                 }}
+               >
+                 {word.text}
+               </span>
+            );
+          })}
+        </div>
+    );
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -277,28 +337,49 @@ export default function Home() {
                   />
                   
                   {/* Caption Overlay */}
-                  {(wordLevelSubtitles.length > 0 || phraseSubtitles.length > 0) && (
-                    <div className="absolute bottom-8 left-0 right-0 text-center pointer-events-none p-4">
-                      <div className="transition-all duration-100 ease-in-out">
-                        {getCurrentCaption() && (
-                          <span className="inline-block px-3 py-1.5 bg-black/70 text-white rounded-lg text-xl font-bold shadow-lg backdrop-blur-sm">
-                            {getCurrentCaption()}
-                          </span>
-                        )}
+                  {(wordLevelSubtitles.length > 0) && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none pb-12">
+                      <div className="w-full mt-auto mb-12">
+                         {renderOverlayContent()}
                       </div>
                     </div>
                   )}
                 </div>
-                <p className="text-sm text-gray-500 mt-2 text-center">
-                  {wordLevelSubtitles.length > 0 
-                    ? `Displaying ${viewMode === 'word' ? 'word-level' : 'phrase-level'} captions`
-                    : 'Upload to generate captions'}
-                </p>
+                
+                <div className="mt-6 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                  <div className="flex flex-col gap-4">
+                    <div className="flex justify-between items-center">
+                       <label className="text-sm font-bold text-gray-700">
+                         Caption Style: <span className="text-indigo-600">{wordsPerCaption === 1 ? 'Stack Mode (1 Word)' : `Viral Mode (${wordsPerCaption} Words)`}</span>
+                       </label>
+                       <span className="text-xs text-gray-500">Adjust how many words appear at once</span>
+                    </div>
+                    
+                    <input 
+                      type="range" 
+                      min="1" 
+                      max="6" 
+                      step="1"
+                      value={wordsPerCaption}
+                      onChange={(e) => setWordsPerCaption(parseInt(e.target.value))}
+                      className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                    />
+                    
+                    <div className="flex justify-between text-xs text-gray-400 px-1">
+                      <span>1 (Fast)</span>
+                      <span>2</span>
+                      <span>3 (Standard)</span>
+                      <span>4</span>
+                      <span>5</span>
+                      <span>6 (Long)</span>
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
             {/* Results */}
-            {(wordLevelSubtitles.length > 0 || phraseSubtitles.length > 0) && (
+            {(wordLevelSubtitles.length > 0) && (
               <div className="space-y-4">
                 {/* Debug Info */}
                 {debugInfo && (

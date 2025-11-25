@@ -152,13 +152,14 @@ def generate_subtitles(req: https_fn.Request) -> https_fn.Response:
             phrase_subtitles = []
             phrase_index = 1
             
+            # Basic default grouping for SRT backward compatibility
             if word_level_subtitles:
-                # We have word-level data, create phrases from words
                 current_phrase_words = []
                 current_phrase_start = None
                 
-                MAX_WORDS_PER_PHRASE = 8
-                MAX_DURATION = 5.0  # seconds
+                # Default to standard SRT length (8-10 words) for file download
+                # Frontend now handles visual display grouping dynamically
+                MAX_WORDS_FOR_SRT = 10
                 
                 for i, word_data in enumerate(word_level_subtitles):
                     if current_phrase_start is None:
@@ -166,27 +167,16 @@ def generate_subtitles(req: https_fn.Request) -> https_fn.Response:
                     
                     current_phrase_words.append(word_data)
                     
-                    # Check if we should create a new phrase
-                    phrase_duration = word_data['end'] - current_phrase_start
+                    # Simple grouping for SRT file
                     should_break = False
                     
-                    # Break if we have enough words
-                    if len(current_phrase_words) >= MAX_WORDS_PER_PHRASE:
+                    if len(current_phrase_words) >= MAX_WORDS_FOR_SRT:
                         should_break = True
-                    
-                    # Break if duration is too long
-                    elif phrase_duration >= MAX_DURATION:
-                        should_break = True
-                    
-                    # Break at natural pauses (check gap between current and next word)
                     elif i < len(word_level_subtitles) - 1:
-                        next_word_start = word_level_subtitles[i + 1]['start']
-                        gap = next_word_start - word_data['end']
-                        # If there's a pause of more than 0.8 seconds
-                        if gap > 0.8 and len(current_phrase_words) >= 3:
-                            should_break = True
+                        # Break on long pauses
+                        if word_level_subtitles[i+1]['start'] - word_data['end'] > 1.0:
+                             should_break = True
                     
-                    # Create phrase if we should break or if this is the last word
                     if should_break or i == len(word_level_subtitles) - 1:
                         phrase_text = ' '.join([w['text'] for w in current_phrase_words])
                         phrase_end = current_phrase_words[-1]['end']
@@ -223,8 +213,8 @@ def generate_subtitles(req: https_fn.Request) -> https_fn.Response:
             # Update job status
             job_ref.update({
                 'status': 'completed',
-                'word_level_subtitles': word_level_subtitles,  # For precise video rendering
-                'phrase_subtitles': phrase_subtitles,  # For traditional SRT
+                'word_level_subtitles': word_level_subtitles,
+                'phrase_subtitles': phrase_subtitles,
                 'srt_content': srt_content,
                 'completed_at': firestore.SERVER_TIMESTAMP
             })
@@ -233,9 +223,9 @@ def generate_subtitles(req: https_fn.Request) -> https_fn.Response:
                 response=json.dumps({
                     "success": True,
                     "job_id": job_ref.id,
-                    "word_level_subtitles": word_level_subtitles,  # Each word with precise timing
-                    "phrase_subtitles": phrase_subtitles,  # Grouped phrases for readability
-                    "subtitles": phrase_subtitles,  # For backward compatibility
+                    "word_level_subtitles": word_level_subtitles,
+                    # We still return phrase_subtitles for legacy/SRT purposes but frontend will ignore for display
+                    "phrase_subtitles": phrase_subtitles,
                     "srt": srt_content,
                     "debug_info": {
                         "total_results": len(response.results),
