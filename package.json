@@ -1,0 +1,21 @@
+{
+  "name": "auto-captions",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "functions"
+  ],
+  "scripts": {
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "build:frontend": "npm run build --workspace=frontend",
+    "dev:functions": "firebase emulators:start --only functions",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:hosting": "firebase deploy --only hosting",
+    "deploy": "firebase deploy"
+  },
+  "devDependencies": {
+    "firebase-tools": "^13.0.0"
+  }
+}
+
