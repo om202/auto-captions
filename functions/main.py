@@ -62,6 +62,17 @@ def generate_subtitles(req: https_fn.Request) -> https_fn.Response:
                 audio_temp_path
             ], check=True, capture_output=True)
             
+            # Get audio duration using ffprobe
+            duration_result = subprocess.run([
+                'ffprobe', '-v', 'error',
+                '-show_entries', 'format=duration',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                audio_temp_path
+            ], capture_output=True, text=True, check=True)
+            
+            audio_duration_seconds = float(duration_result.stdout.strip())
+            print(f"Audio duration: {audio_duration_seconds:.2f} seconds")
+            
             # Read audio content
             with open(audio_temp_path, 'rb') as audio_file:
                 audio_content = audio_file.read()
@@ -75,7 +86,10 @@ def generate_subtitles(req: https_fn.Request) -> https_fn.Response:
             
             # For audio longer than 1 minute or larger than 10MB, use long_running_recognize
             # Otherwise use synchronous recognize
-            use_long_running = audio_size_mb > 10
+            # Google Speech-to-Text has a 1 minute limit for synchronous recognition
+            use_long_running = audio_duration_seconds > 60 or audio_size_mb > 10
+            
+            print(f"Using {'long-running' if use_long_running else 'synchronous'} recognition")
             
             config = speech.RecognitionConfig(
                 encoding=speech.RecognitionConfig.AudioEncoding.LINEAR16,
