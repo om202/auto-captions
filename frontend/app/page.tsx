@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { initializeApp } from 'firebase/app';
 import { getStorage, ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 
@@ -28,6 +28,34 @@ export default function Home() {
   const [srtUrl, setSrtUrl] = useState('');
   const [viewMode, setViewMode] = useState<'word' | 'phrase'>('word');
   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [videoUrl, setVideoUrl] = useState<string | null>(null);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setVideoUrl(url);
+      return () => URL.revokeObjectURL(url);
+    } else {
+      setVideoUrl(null);
+    }
+  }, [file]);
+
+  const getCurrentCaption = () => {
+    if (viewMode === 'word') {
+      // Find the word that matches current time
+      // Adding a small buffer or handling gaps might be nice, but strictly:
+      const currentWord = wordLevelSubtitles.find(word => 
+        currentTime >= word.start && currentTime <= word.end
+      );
+      return currentWord ? currentWord.text : '';
+    } else {
+      const currentPhrase = phraseSubtitles.find(phrase => 
+        currentTime >= phrase.start && currentTime <= phrase.end
+      );
+      return currentPhrase ? currentPhrase.text : '';
+    }
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -233,6 +261,39 @@ export default function Home() {
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-md">
                 {error}
+              </div>
+            )}
+
+            {/* Video Preview with Overlay */}
+            {videoUrl && (
+              <div className="border-t border-gray-200 pt-6">
+                <h2 className="text-lg font-semibold text-gray-900 mb-4">Video Preview</h2>
+                <div className="relative aspect-video bg-black rounded-lg overflow-hidden shadow-lg ring-1 ring-gray-900/5">
+                  <video
+                    src={videoUrl}
+                    controls
+                    className="w-full h-full"
+                    onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+                  />
+                  
+                  {/* Caption Overlay */}
+                  {(wordLevelSubtitles.length > 0 || phraseSubtitles.length > 0) && (
+                    <div className="absolute bottom-8 left-0 right-0 text-center pointer-events-none p-4">
+                      <div className="transition-all duration-100 ease-in-out">
+                        {getCurrentCaption() && (
+                          <span className="inline-block px-3 py-1.5 bg-black/70 text-white rounded-lg text-xl font-bold shadow-lg backdrop-blur-sm">
+                            {getCurrentCaption()}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                <p className="text-sm text-gray-500 mt-2 text-center">
+                  {wordLevelSubtitles.length > 0 
+                    ? `Displaying ${viewMode === 'word' ? 'word-level' : 'phrase-level'} captions`
+                    : 'Upload to generate captions'}
+                </p>
               </div>
             )}
 
