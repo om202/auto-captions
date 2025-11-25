@@ -22,9 +22,12 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processing, setProcessing] = useState(false);
-  const [subtitles, setSubtitles] = useState<any[]>([]);
+  const [wordLevelSubtitles, setWordLevelSubtitles] = useState<any[]>([]);
+  const [phraseSubtitles, setPhraseSubtitles] = useState<any[]>([]);
   const [error, setError] = useState('');
   const [srtUrl, setSrtUrl] = useState('');
+  const [viewMode, setViewMode] = useState<'word' | 'phrase'>('word');
+  const [debugInfo, setDebugInfo] = useState<any>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -43,7 +46,8 @@ export default function Home() {
 
     setUploading(true);
     setError('');
-    setSubtitles([]);
+    setWordLevelSubtitles([]);
+    setPhraseSubtitles([]);
     setSrtUrl('');
 
     try {
@@ -86,9 +90,18 @@ export default function Home() {
             const result = await response.json();
 
             if (result.success) {
-              setSubtitles(result.subtitles);
+              setWordLevelSubtitles(result.word_level_subtitles || []);
+              setPhraseSubtitles(result.phrase_subtitles || result.subtitles || []);
               setSrtUrl(result.srt_path);
+              setDebugInfo(result.debug_info);
               setProcessing(false);
+              
+              // Log debug info to console
+              console.log('Transcription result:', {
+                word_count: result.word_level_subtitles?.length || 0,
+                phrase_count: result.phrase_subtitles?.length || 0,
+                debug_info: result.debug_info
+              });
             } else {
               setError(`Processing failed: ${result.error}`);
               setProcessing(false);
@@ -106,14 +119,23 @@ export default function Home() {
   };
 
   const downloadSRT = () => {
-    if (!srtUrl) return;
-    
-    const srtContent = generateSRT(subtitles);
+    const srtContent = generateSRT(phraseSubtitles);
     const blob = new Blob([srtContent], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
     a.download = 'subtitles.srt';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const downloadWordLevelJSON = () => {
+    const jsonContent = JSON.stringify(wordLevelSubtitles, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'word_level_subtitles.json';
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -215,36 +237,110 @@ export default function Home() {
             )}
 
             {/* Results */}
-            {subtitles.length > 0 && (
+            {(wordLevelSubtitles.length > 0 || phraseSubtitles.length > 0) && (
               <div className="space-y-4">
+                {/* Debug Info */}
+                {debugInfo && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-md p-3 text-sm">
+                    <div className="font-medium text-blue-900 mb-1">Debug Info:</div>
+                    <div className="text-blue-700 space-y-1">
+                      <div>✓ Total API results: {debugInfo.total_results}</div>
+                      <div>✓ Word-level timestamps: {debugInfo.word_count} words</div>
+                      <div>✓ Phrase segments: {debugInfo.phrase_count} phrases</div>
+                      <div>✓ Has word timestamps: {debugInfo.has_word_timestamps ? 'Yes ✅' : 'No ❌'}</div>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="flex justify-between items-center">
                   <h2 className="text-xl font-semibold text-gray-900">
                     Generated Subtitles
                   </h2>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={downloadWordLevelJSON}
+                      className="bg-blue-600 text-white py-2 px-4 rounded-md
+                        hover:bg-blue-700 transition-colors font-medium text-sm"
+                    >
+                      Download Word-Level JSON
+                    </button>
+                    <button
+                      onClick={downloadSRT}
+                      className="bg-green-600 text-white py-2 px-4 rounded-md
+                        hover:bg-green-700 transition-colors font-medium text-sm"
+                    >
+                      Download SRT
+                    </button>
+                  </div>
+                </div>
+
+                {/* View Mode Toggle */}
+                <div className="flex gap-2 border-b border-gray-200">
                   <button
-                    onClick={downloadSRT}
-                    className="bg-green-600 text-white py-2 px-4 rounded-md
-                      hover:bg-green-700 transition-colors font-medium"
+                    onClick={() => setViewMode('word')}
+                    className={`px-4 py-2 font-medium text-sm transition-colors ${
+                      viewMode === 'word'
+                        ? 'text-indigo-600 border-b-2 border-indigo-600'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
                   >
-                    Download SRT
+                    Word-Level ({wordLevelSubtitles.length} words)
+                  </button>
+                  <button
+                    onClick={() => setViewMode('phrase')}
+                    className={`px-4 py-2 font-medium text-sm transition-colors ${
+                      viewMode === 'phrase'
+                        ? 'text-indigo-600 border-b-2 border-indigo-600'
+                        : 'text-gray-600 hover:text-gray-900'
+                    }`}
+                  >
+                    Phrase-Level ({phraseSubtitles.length} phrases)
                   </button>
                 </div>
 
-                <div className="bg-gray-50 rounded-md p-4 max-h-96 overflow-y-auto">
-                  {subtitles.map((sub) => (
-                    <div key={sub.index} className="mb-4 pb-4 border-b border-gray-200 last:border-0">
-                      <div className="flex justify-between items-start mb-1">
-                        <span className="text-sm font-medium text-gray-500">
-                          #{sub.index}
-                        </span>
-                        <span className="text-xs text-gray-500">
-                          {formatTime(sub.start)} → {formatTime(sub.end)}
-                        </span>
-                      </div>
-                      <p className="text-gray-900">{sub.text}</p>
+                {/* Word-Level View */}
+                {viewMode === 'word' && (
+                  <div className="bg-gray-50 rounded-md p-4 max-h-96 overflow-y-auto">
+                    <p className="text-xs text-gray-600 mb-3">
+                      💡 Each word has precise timing for video overlay
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {wordLevelSubtitles.map((word) => (
+                        <div
+                          key={word.index}
+                          className="bg-white border border-gray-200 rounded px-3 py-2 hover:border-indigo-400 transition-colors"
+                        >
+                          <div className="text-xs text-gray-500 mb-1">
+                            {formatTime(word.start)} → {formatTime(word.end)}
+                          </div>
+                          <div className="font-medium text-gray-900">{word.text}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  </div>
+                )}
+
+                {/* Phrase-Level View */}
+                {viewMode === 'phrase' && (
+                  <div className="bg-gray-50 rounded-md p-4 max-h-96 overflow-y-auto">
+                    <p className="text-xs text-gray-600 mb-3">
+                      💡 Grouped phrases for traditional subtitle display
+                    </p>
+                    {phraseSubtitles.map((sub) => (
+                      <div key={sub.index} className="mb-4 pb-4 border-b border-gray-200 last:border-0">
+                        <div className="flex justify-between items-start mb-1">
+                          <span className="text-sm font-medium text-gray-500">
+                            #{sub.index}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            {formatTime(sub.start)} → {formatTime(sub.end)}
+                          </span>
+                        </div>
+                        <p className="text-gray-900">{sub.text}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
