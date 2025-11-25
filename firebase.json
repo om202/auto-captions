@@ -3,14 +3,7 @@
     {
       "source": "functions",
       "codebase": "default",
-      "ignore": [
-        "venv",
-        ".git",
-        "firebase-debug.log",
-        "firebase-debug.*.log",
-        "__pycache__"
-      ],
-      "predeploy": []
+      "runtime": "python311"
     }
   ],
   "hosting": {
@@ -26,6 +19,9 @@
         "destination": "/index.html"
       }
     ]
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }
 
